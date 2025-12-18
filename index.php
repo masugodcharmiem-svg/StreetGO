@@ -1,147 +1,121 @@
 <?php
-require_once __DIR__ . '/config/database.php';
-require_once __DIR__ . '/includes/header.php';
+session_start();
+require_once __DIR__ . '/../config/database.php';
 
-// Fetch random featured items
-$stmt = $pdo->query("SELECT * FROM menu_items WHERE is_available = TRUE ORDER BY RAND() LIMIT 6");
-$featuredItems = $stmt->fetchAll();
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
+    header('Location: /login.php');
+    exit;
+}
 
-$categories = [
-    ['icon' => 'fa-fire', 'name' => 'Grilled', 'desc' => 'BBQ favorites'],
-    ['icon' => 'fa-oil-can', 'name' => 'Fried', 'desc' => 'Crispy treats'],
-    ['icon' => 'fa-ice-cream', 'name' => 'Sweets', 'desc' => 'Sweet delights'],
-    ['icon' => 'fa-star', 'name' => 'Exotic', 'desc' => 'Unique tastes']
-];
+$orderCount = $pdo->query("SELECT COUNT(*) FROM orders")->fetchColumn();
+$userCount = $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'customer'")->fetchColumn();
+$revenue = $pdo->query("SELECT COALESCE(SUM(total_amount), 0) FROM orders WHERE status = 'delivered'")->fetchColumn();
+$menuCount = $pdo->query("SELECT COUNT(*) FROM menu_items")->fetchColumn();
+
+$recentOrders = $pdo->query("
+    SELECT o.*, u.username, u.full_name 
+    FROM orders o 
+    JOIN users u ON o.user_id = u.id 
+    ORDER BY o.created_at DESC 
+    LIMIT 5
+")->fetchAll();
 ?>
-
-<section class="hero-section">
-    <div class="container">
-        <div class="row align-items-center">
-            <div class="col-lg-6 hero-content">
-                <h1>Authentic Filipino<br>Street Food</h1>
-                <p>Experience the vibrant flavors of the Philippines delivered straight to your doorstep. From Isaw to Taho, we bring the streets to you!</p>
-                <a href="menu.php" class="btn btn-light btn-lg me-3">
-                    <i class="fas fa-utensils"></i> View Menu
-                </a>
-                <a href="register.php" class="btn btn-outline-light btn-lg">
-                    <i class="fas fa-user-plus"></i> Sign Up Now
-                </a>
-            </div>
-            <div class="col-lg-6 d-none d-lg-block text-center">
-                <!-- CHANGED: Replaced http link with local jpg file -->
-                <img src="assets/img/food.jpg" alt="Street Food" class="img-fluid rounded-4 shadow-lg" style="max-width: 80%; transform: rotate(5deg);">
-            </div>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <title>Admin Dashboard - StreetGo</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="/assets/css/style.css" rel="stylesheet">
+</head>
+<body style="padding-top: 0;">
+    <?php include __DIR__ . '/sidebar.php'; ?>
+    
+    <div class="admin-content">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>Dashboard</h2>
+            <span class="text-muted">Welcome, <?php echo htmlspecialchars($_SESSION['full_name']); ?>!</span>
         </div>
-    </div>
-</section>
-
-<section class="categories-section">
-    <div class="container">
-        <div class="section-title">
-            <h2>Browse Categories</h2>
-            <div class="underline"></div>
-            <p>Explore our delicious selection of Filipino street food</p>
-        </div>
-        <div class="row g-4">
-            <?php foreach ($categories as $cat): ?>
-            <div class="col-6 col-md-3">
-                <a href="menu.php?category=<?php echo urlencode($cat['name']); ?>" class="text-decoration-none">
-                    <div class="category-card">
-                        <i class="fas <?php echo $cat['icon']; ?>"></i>
-                        <h5><?php echo $cat['name']; ?></h5>
-                        <p><?php echo $cat['desc']; ?></p>
-                    </div>
-                </a>
-            </div>
-            <?php endforeach; ?>
-        </div>
-    </div>
-</section>
-
-<section class="featured-section">
-    <div class="container">
-        <div class="section-title">
-            <h2>Featured Street Foods</h2>
-            <div class="underline"></div>
-            <p>Try our most popular and authentic Filipino street food items</p>
-        </div>
-        <div class="row g-4">
-            <?php foreach ($featuredItems as $item): ?>
-            <div class="col-md-6 col-lg-4">
-                <div class="food-card">
-                    <div class="card-img-wrapper">
-                        <!-- Note: Ensure your database 'image_url' fields also point to local files (e.g., assets/images/isaw.jpg) -->
-                        <img src="<?php echo htmlspecialchars($item['image_url']); ?>" alt="<?php echo htmlspecialchars($item['name']); ?>">
-                        <span class="category-badge"><?php echo htmlspecialchars($item['category']); ?></span>
-                    </div>
-                    <div class="card-body">
-                        <h5 class="card-title"><?php echo htmlspecialchars($item['name']); ?></h5>
-                        <p class="card-text"><?php echo htmlspecialchars(substr($item['description'], 0, 80)); ?>...</p>
-                        <div class="d-flex justify-content-between align-items-center">
-                            <span class="price">₱<?php echo number_format($item['price'], 2); ?></span>
-                            <button onclick="addToCart(<?php echo $item['id']; ?>)" class="btn btn-add-cart">
-                                <i class="fas fa-cart-plus"></i> Add
-                            </button>
-                        </div>
+        
+        <div class="row g-4 mb-4">
+            <div class="col-md-6 col-xl-3">
+                <div class="stat-card">
+                    <div class="icon orders"><i class="fas fa-shopping-bag"></i></div>
+                    <div>
+                        <h3><?php echo $orderCount; ?></h3>
+                        <p>Total Orders</p>
                     </div>
                 </div>
             </div>
-            <?php endforeach; ?>
-        </div>
-        <div class="text-center mt-5">
-            <a href="menu.php" class="btn btn-primary btn-lg">
-                <i class="fas fa-utensils"></i> View Full Menu
-            </a>
-        </div>
-    </div>
-</section>
-
-<section class="py-5 bg-white">
-    <div class="container">
-        <div class="section-title">
-            <h2>Why Choose StreetGo?</h2>
-            <div class="underline"></div>
-        </div>
-        <div class="row g-4">
-            <div class="col-md-4">
-                <div class="feature-box">
-                    <div class="icon">
-                        <i class="fas fa-motorcycle"></i>
+            <div class="col-md-6 col-xl-3">
+                <div class="stat-card">
+                    <div class="icon users"><i class="fas fa-users"></i></div>
+                    <div>
+                        <h3><?php echo $userCount; ?></h3>
+                        <p>Customers</p>
                     </div>
-                    <h5>Fast Delivery</h5>
-                    <p>Get your favorite street food delivered hot and fresh within 30-60 minutes</p>
                 </div>
             </div>
-            <div class="col-md-4">
-                <div class="feature-box">
-                    <div class="icon">
-                        <i class="fas fa-award"></i>
+            <div class="col-md-6 col-xl-3">
+                <div class="stat-card">
+                    <div class="icon revenue"><i class="fas fa-peso-sign"></i></div>
+                    <div>
+                        <h3>₱<?php echo number_format($revenue, 2); ?></h3>
+                        <p>Revenue</p>
                     </div>
-                    <h5>Authentic Taste</h5>
-                    <p>We partner with the best street food vendors to bring you genuine Filipino flavors</p>
                 </div>
             </div>
-            <div class="col-md-4">
-                <div class="feature-box">
-                    <div class="icon">
-                        <i class="fas fa-wallet"></i>
+            <div class="col-md-6 col-xl-3">
+                <div class="stat-card">
+                    <div class="icon items"><i class="fas fa-utensils"></i></div>
+                    <div>
+                        <h3><?php echo $menuCount; ?></h3>
+                        <p>Menu Items</p>
                     </div>
-                    <h5>Affordable Prices</h5>
-                    <p>Enjoy street food prices with the convenience of home delivery</p>
                 </div>
             </div>
         </div>
+        
+        <div class="data-table">
+            <div class="p-3 border-bottom d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Recent Orders</h5>
+                <a href="/admin/orders.php" class="btn btn-sm btn-primary">View All</a>
+            </div>
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Order ID</th>
+                        <th>Customer</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($recentOrders)): ?>
+                    <tr>
+                        <td colspan="5" class="text-center py-4 text-muted">No orders yet</td>
+                    </tr>
+                    <?php else: ?>
+                    <?php foreach ($recentOrders as $order): ?>
+                    <tr>
+                        <td>#<?php echo str_pad($order['id'], 6, '0', STR_PAD_LEFT); ?></td>
+                        <td><?php echo htmlspecialchars($order['full_name']); ?></td>
+                        <td>₱<?php echo number_format($order['total_amount'], 2); ?></td>
+                        <td><span class="status-badge <?php echo $order['status']; ?>"><?php echo ucfirst($order['status']); ?></span></td>
+                        <td><?php echo date('M d, Y', strtotime($order['created_at'])); ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
     </div>
-</section>
-
-<section class="cta-section">
-    <div class="container">
-        <h2>Ready to Order?</h2>
-        <p>Sign up now and get 10% off your first order!</p>
-        <a href="register.php" class="btn btn-light btn-lg">
-            <i class="fas fa-user-plus"></i> Create Account
-        </a>
-    </div>
-</section>
-
-<?php require_once __DIR__ . '/includes/footer.php'; ?>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
